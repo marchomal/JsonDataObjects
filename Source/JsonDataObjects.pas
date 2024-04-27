@@ -88,7 +88,7 @@ unit JsonDataObjects;
 
 // Use an optimized NewInstance implementation. It skips the initialization of the interface table.
 // and seals the TJsonArray and TJsonObject classes because it isn't safe to derive from them.
-{$DEFINE USE_FAST_NEWINSTANCE}
+//{$DEFINE USE_FAST_NEWINSTANCE}
 
 //{$IF CompilerVersion < 28.0} // XE6 or older
   // The XE7 compiler is broken. It doesn't collapse duplicate string literals anymore. (RSP-10015)
@@ -481,7 +481,7 @@ type
   end;
 
   // TJsonBaseObject is the base class for TJsonArray and TJsonObject
-  TJsonBaseObject = class abstract(TObject)
+  TJsonBaseObject = class abstract(TInterfacedObject)
   private type
     TWriterAppendMethod = procedure(P: PChar; Len: Integer) of object;
     TStreamInfo = record
@@ -545,6 +545,7 @@ type
     procedure FromJSON(S: PWideChar; Len: Integer = -1{$IFDEF SUPPORT_PROGRESS}; AProgress: PJsonReaderProgressRec = nil{$ENDIF}); overload;
 
     function ToJSON(Compact: Boolean = True): string;
+    function AsJSON(const Ident: Boolean = False): string;
     {$IFDEF SUPPORTS_UTF8STRING}
     function ToUtf8JSON(Compact: Boolean = True): UTF8String; overload;
     {$ENDIF SUPPORTS_UTF8STRING}
@@ -574,8 +575,31 @@ type
     property Current: TJsonDataValueHelper read GetCurrent;
   end;
 
+  IJsonArray = interface
+    ['{BEFC3D8C-0450-437B-814F-4509AFB35EB0}']
+    function GetString(Index: Integer): string;
+    function GetInt(Index: Integer): Integer;
+    function GetArray(Index: Integer): TJsonArray;
+    function GetObject(Index: Integer): TJsonObject;
+
+    procedure SetString(Index: Integer; const Value: string);
+    procedure SetInt(Index: Integer; const Value: Integer);
+    procedure SetArray(Index: Integer; const Value: TJsonArray);
+    procedure SetObject(Index: Integer; const Value: TJsonObject);
+
+    property S[Index: Integer]: string read GetString write SetString;
+    property I[Index: Integer]: Integer read GetInt write SetInt;
+    property A[Index: Integer]: TJsonArray read GetArray write SetArray;
+    property O[Index: Integer]: TJsonObject read GetObject write SetObject;
+
+    procedure LoadFromFile(const FileName: string; Utf8WithoutBOM: Boolean = True{$IFDEF SUPPORT_PROGRESS}; AProgress: PJsonReaderProgressRec = nil{$ENDIF});
+    procedure SaveToFile(const FileName: string; Compact: Boolean = True; Encoding: TEncoding = nil; Utf8WithoutBOM: Boolean = True);
+    function AsJSON(const Ident: Boolean = False): string;
+    function ToJSON(Compact: Boolean = True): string;
+  end;
+
   // TJsonArray hold a JSON array and manages the array elements.
-  TJsonArray = class {$IFDEF USE_FAST_NEWINSTANCE}sealed{$ENDIF}(TJsonBaseObject)
+  TJsonArray = class {$IFDEF USE_FAST_NEWINSTANCE}sealed{$ENDIF}(TJsonBaseObject, IJsonArray)
   private
     FItems: PJsonDataValueArray;
     FCapacity: Integer;
@@ -706,8 +730,31 @@ type
     property Current: TJsonNameValuePair read GetCurrent;
   end;
 
+  IJsonObject = interface
+    ['{680F853B-F1D6-4AB5-8DF7-832C20B7F470}']
+    function GetString(const Name: string): string;
+    function GetInt(const Name: string): Integer;
+    function GetArray(const Name: string): TJsonArray;
+    function GetObject(const Name: string): TJsonObject;
+
+    procedure SetString(const Name, Value: string);
+    procedure SetInt(const Name: string; const Value: Integer);
+    procedure SetArray(const Name: string; const Value: TJsonArray);
+    procedure SetObject(const Name: string; const Value: TJsonObject);
+
+    property S[const Name: string]: string read GetString write SetString;
+    property I[const Name: string]: Integer read GetInt write SetInt;
+    property A[const Name: string]: TJsonArray read GetArray write SetArray;
+    property O[const Name: string]: TJsonObject read GetObject write SetObject;
+
+    procedure LoadFromFile(const FileName: string; Utf8WithoutBOM: Boolean = True{$IFDEF SUPPORT_PROGRESS}; AProgress: PJsonReaderProgressRec = nil{$ENDIF});
+    procedure SaveToFile(const FileName: string; Compact: Boolean = True; Encoding: TEncoding = nil; Utf8WithoutBOM: Boolean = True);
+    function AsJSON(const Ident: Boolean = False): string;
+    function ToJSON(Compact: Boolean = True): string;
+  end;
+
   // TJsonObject hold a JSON object and manages the JSON object properties
-  TJsonObject = class {$IFDEF USE_FAST_NEWINSTANCE}sealed{$ENDIF}(TJsonBaseObject)
+  TJsonObject = class {$IFDEF USE_FAST_NEWINSTANCE}sealed{$ENDIF}(TJsonBaseObject, IJsonObject)
   private type
     PJsonStringArray = ^TJsonStringArray;
     TJsonStringArray = array[0..MaxInt div SizeOf(string) - 1] of string;
@@ -3538,6 +3585,11 @@ begin
   end;
 end;
 
+function TJsonBaseObject.AsJSON(const Ident: Boolean = False): string;
+begin
+  Result := Self.ToJSON(not Ident);
+end;
+
 {$IFDEF SUPPORTS_UTF8STRING}
 function TJsonBaseObject.ToUtf8JSON(Compact: Boolean = True): UTF8String;
 var
@@ -4410,6 +4462,7 @@ begin
   else
     FLastValueItem := nil;
 end;
+
 {$ENDIF USE_LAST_NAME_STRING_LITERAL_CACHE}
 
 procedure TJsonObject.Grow;
